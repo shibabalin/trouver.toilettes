@@ -3,9 +3,9 @@ const CACHE = 'fontaines-v1';
 
 // Fichiers à mettre en cache pour un accès hors-ligne de base
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json'
+  '/trouver.toilettes/',
+  '/trouver.toilettes/index.html',
+  '/trouver.toilettes/manifest.json'
 ];
 
 self.addEventListener('install', e => {

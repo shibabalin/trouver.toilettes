@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#1a6fbf" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Fontaines & Toilettes" />
+  <title>Fontaines & Toilettes</title>
+  <link rel="manifest" href="./manifest.json" />
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1923;
+    }
+
+    /* ══════════════════════════════════
+       LAYOUT : colonne header + carte
+    ══════════════════════════════════ */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      height: 100dvh; /* dynamic viewport height sur mobile */
+    }
+
+    /* ══════════════════════════════════
+       HEADER
+    ══════════════════════════════════ */
+    header {
+      background: #1a6fbf;
+      padding: 10px 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      /* Espace pour la barre de statut iOS/Android */
+      padding-top: max(10px, env(safe-area-inset-top));
+    }
+
+    .header-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    header h1 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: white;
+      white-space: nowrap;
+      letter-spacing: 0.01em;
+    }
+
+    /* ── Barre de recherche ── */
+    .search-wrap {
+      position: relative;
+      flex: 1;
+    }
+
+    #search-input {
+      width: 100%;
+      padding: 10px 14px;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      background: rgba(255,255,255,0.95);
+      color: #111;
+      outline: none;
+      /* Taille tactile confortable */
+      min-height: 44px;
+    }
+
+    #search-input::placeholder { color: #888; }
+
+    /* Suggestions */
+    #suggestions {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0; right: 0;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.35);
+      max-height: 240px;
+      overflow-y: auto;
+      z-index: 2000;
+      display: none;
+    }
+
+    #suggestions li {
+      list-style: none;
+      padding: 12px 14px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      color: #222;
+      border-bottom: 1px solid #f0f0f0;
+      line-height: 1.3;
+      /* Zone tactile suffisante */
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+    }
+
+    #suggestions li:last-child { border: none; }
+    #suggestions li:active { background: #e8f0fe; }
+
+    /* ── Boutons catégories ── */
+    .btn-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 11px 8px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 700;
+      min-height: 46px;
+      transition: transform .1s, opacity .1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+
+    .btn:active { transform: scale(0.96); opacity: 0.85; }
+
+    #btn-fontaines {
+      background: #4fc3f7;
+      color: #003d5c;
+    }
+    #btn-fontaines.active { background: #0277bd; color: white; }
+
+    #btn-toilettes {
+      background: #ce93d8;
+      color: #3a003d;
+    }
+    #btn-toilettes.active { background: #7b1fa2; color: white; }
+
+    #btn-piquenique {
+      background: #aed581;
+      color: #1b3a00;
+    }
+    #btn-piquenique.active { background: #558b2f; color: white; }
+
+    /* ══════════════════════════════════
+       CARTE — prend tout l'espace restant
+    ══════════════════════════════════ */
+    #map {
+      flex: 1;
+      min-height: 0; /* important pour flexbox */
+    }
+
+    /* ══════════════════════════════════
+       LOADER
+    ══════════════════════════════════ */
+    #loader {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 3000;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      color: white;
+      font-size: 1rem;
+    }
+    #loader.visible { display: flex; }
+
+    .spinner {
+      width: 44px; height: 44px;
+      border: 4px solid rgba(255,255,255,.25);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin .75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ══════════════════════════════════
+       TOAST
+    ══════════════════════════════════ */
+    #toast {
+      position: fixed;
+      bottom: max(20px, env(safe-area-inset-bottom, 20px));
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(20,20,20,.92);
+      color: white;
+      padding: 11px 22px;
+      border-radius: 24px;
+      font-size: 0.9rem;
+      white-space: nowrap;
+      max-width: 90vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      z-index: 4000;
+      opacity: 0;
+      transition: opacity .35s;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ══════════════════════════════════
+       POPUP LEAFLET — adapté mobile
+    ══════════════════════════════════ */
+    .leaflet-popup-content {
+      font-size: 0.95rem;
+      line-height: 1.5;
+      min-width: 160px;
+    }
+
+    .popup-title {
+      font-weight: 700;
+      font-size: 1rem;
+      margin-bottom: 4px;
+    }
+
+    .popup-sub {
+      color: #666;
+      font-size: 0.82rem;
+      margin-bottom: 10px;
+    }
+
+    .popup-btn {
+      display: block;
+      text-align: center;
+      background: #1565c0;
+      color: #ffffff;
+      padding: 11px 14px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      border: 2px solid #0d47a1;
+      margin-top: 10px;
+    }
+
+    /* Badge état fonctionnel */
+    .popup-etat {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin: 8px 0 4px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+    .popup-etat.ok    { background: #e8f5e9; color: #2e7d32; }
+    .popup-etat.ko    { background: #ffebee; color: #c62828; }
+    .popup-etat.unkn  { background: #f5f5f5; color: #757575; }
+
+    .popup-etat-date {
+      font-size: 0.76rem;
+      color: #999;
+      margin-bottom: 6px;
+    }
+
+    /* Boutons signalement */
+    .popup-signalement {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .popup-sig-btn {
+      flex: 1;
+      padding: 8px 4px;
+      border: none;
+      border-radius: 7px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+    }
+    .popup-sig-btn.fonctionne  { background: #e8f5e9; color: #2e7d32; border: 1.5px solid #a5d6a7; }
+    .popup-sig-btn.fonctionne:active { background: #c8e6c9; }
+    .popup-sig-btn.hs          { background: #ffebee; color: #c62828; border: 1.5px solid #ef9a9a; }
+    .popup-sig-btn.hs:active   { background: #ffcdd2; }
+
+    /* ══════════════════════════════════
+       BOUTON LOCALISATION
+    ══════════════════════════════════ */
+    #btn-locate {
+      background: white;
+      border: none;
+      border-radius: 10px;
+      padding: 0 12px;
+      min-height: 44px;
+      cursor: pointer;
+      font-size: 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 4px rgba(0,0,0,.2);
+      flex-shrink: 0;
+    }
+    #btn-locate:active { opacity: 0.7; }
+  </style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- HEADER -->
+  <header>
+    <div class="header-top">
+      <h1>💧🚻</h1>
+
+      <div class="search-wrap">
+        <input
+          id="search-input"
+          type="search"
+          inputmode="search"
+          placeholder="Ville en France…"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+        />
+        <ul id="suggestions"></ul>
+      </div>
+
+      <!-- Bouton géolocalisation -->
+      <button id="btn-locate" title="Ma position" onclick="localiserMoi()">📍</button>
+    </div>
+
+    <div class="btn-row">
+      <!-- Pour ajouter un type : dupliquer ce bouton + ajouter l'entrée dans CATEGORIES -->
+      <button id="btn-fontaines" class="btn" onclick="rechercher('fontaines')">
+        💧 Fontaines
+      </button>
+      <button id="btn-toilettes" class="btn" onclick="rechercher('toilettes')">
+        🚻 Toilettes
+      </button>
+      <button id="btn-piquenique" class="btn" onclick="rechercher('piquenique')">
+        🍽️ Pique-nique
+      </button>
+    </div>
+  </header>
+
+  <!-- CARTE -->
+  <div id="map"></div>
+
+</div>
+
+<!-- LOADER -->
+<div id="loader">
+  <div class="spinner"></div>
+  <span>Recherche en cours…</span>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+  // ═══════════════════════════════════════════════════
+  // CATEGORIES — ajouter d'autres types ici plus tard
+  // Le filtre est le prédicat OSM (sans node/way/relation)
+  // ═══════════════════════════════════════════════════
+  const CATEGORIES = {
+    fontaines: {
+      label: 'Fontaine d\'eau potable',
+      overpassFilter: '["amenity"="drinking_water"]',
+      couleur: '#0288d1',
+      emoji: '💧'
+    },
+    toilettes: {
+      label: 'Toilettes publiques',
+      overpassFilter: '["amenity"="toilets"]',
+      couleur: '#7b1fa2',
+      emoji: '🚻'
+    },
+    piquenique: {
+      label: 'Table de pique-nique',
+      overpassFilter: '["leisure"="picnic_table"]',
+      couleur: '#558b2f',
+      emoji: '🍽️'
+    }
+    // Exemples futurs :
+    // bancs:     { label: 'Banc',      overpassFilter: '["amenity"="bench"]',        couleur: '#388e3c', emoji: '🪑' },
+    // douches:   { label: 'Douche',    overpassFilter: '["amenity"="shower"]',       couleur: '#f57c00', emoji: '🚿' },
+    // poubelles: { label: 'Poubelle',  overpassFilter: '["amenity"="waste_basket"]', couleur: '#5d4037', emoji: '🗑️' },
+    // parking:   { label: 'Parking',   overpassFilter: '["amenity"="parking"]',      couleur: '#37474f', emoji: '🅿️' },
+    // recharge:  { label: 'Recharge',  overpassFilter: '["amenity"="charging_station"]', couleur: '#2e7d32', emoji: '⚡' },
+  };
+
+  // ═══════════════════════════════════════════════════
+  // INIT CARTE
+  // ═══════════════════════════════════════════════════
+  const map = L.map('map', {
+    zoomControl: false  // on le remet en bas à droite (plus accessible au pouce)
+  }).setView([46.6, 2.3], 6);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+    maxZoom: 19
+  }).addTo(map);
+
+  // Contrôle zoom en bas à droite
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+  let markersLayer = L.layerGroup().addTo(map);
+  let villeSelectionnee = null;
+
+  // ═══════════════════════════════════════════════════
+  // GEOLOCALISATION
+  // ═══════════════════════════════════════════════════
+  function localiserMoi() {
+    if (!navigator.geolocation) { toast('Géolocalisation non disponible.'); return; }
+    const btn = document.getElementById('btn-locate');
+    btn.textContent = '⏳';
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        btn.textContent = '📍';
+        const { latitude: lat, longitude: lon } = pos.coords;
+        villeSelectionnee = { lat, lon, nom: 'Ma position', rayon: 1000 };
+        map.setView([lat, lon], 15);
+        document.getElementById('search-input').value = 'Ma position';
+        toast('Position trouvée. Choisis une catégorie.');
+      },
+      () => {
+        btn.textContent = '📍';
+        toast('Impossible d\'obtenir la position.');
+      },
+      { timeout: 10000 }
+    );
+  }
+
+  // ═══════════════════════════════════════════════════
+  // RECHERCHE DE VILLE — Nominatim
+  // ═══════════════════════════════════════════════════
+  const searchInput = document.getElementById('search-input');
+  const suggestions = document.getElementById('suggestions');
+  let debounceTimer;
+
+  searchInput.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    const q = searchInput.value.trim();
+    if (q.length < 2) { hideSuggestions(); return; }
+    debounceTimer = setTimeout(() => fetchSuggestions(q), 300);
+  });
+
+  async function fetchSuggestions(q) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&countrycodes=fr&format=json&limit=5&addressdetails=1`;
+      const res  = await fetch(url, { headers: { 'Accept-Language': 'fr', 'User-Agent': 'FountainFinder/1.0' } });
+      const data = await res.json();
+      afficherSuggestions(data);
+    } catch { hideSuggestions(); }
+  }
+
+  function afficherSuggestions(resultats) {
+    suggestions.innerHTML = '';
+    if (!resultats.length) { hideSuggestions(); return; }
+    resultats.forEach(r => {
+      const li = document.createElement('li');
+      // Afficher seulement le nom court (commune + département)
+      const addr = r.address || {};
+      const nom = addr.city || addr.town || addr.village || addr.municipality || r.display_name.split(',')[0];
+      const dept = addr.county || addr.state || '';
+      li.textContent = dept ? `${nom} — ${dept}` : nom;
+      li.addEventListener('click', () => choisirVille(r));
+      suggestions.appendChild(li);
+    });
+    suggestions.style.display = 'block';
+  }
+
+  function hideSuggestions() {
+    suggestions.style.display = 'none';
+    suggestions.innerHTML = '';
+  }
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.search-wrap')) hideSuggestions();
+  });
+
+  function choisirVille(r) {
+    const addr = r.address || {};
+    const nom = addr.city || addr.town || addr.village || r.display_name.split(',')[0];
+    searchInput.value = nom;
+    hideSuggestions();
+    searchInput.blur(); // ferme le clavier mobile
+
+    const type = r.type || r.class;
+    let rayon = 1500;
+    if (type === 'city')                               rayon = 5000;
+    if (type === 'town')                               rayon = 3000;
+    if (type === 'village')                            rayon = 1500;
+    if (type === 'county' || type === 'administrative') rayon = 8000;
+
+    villeSelectionnee = { lat: parseFloat(r.lat), lon: parseFloat(r.lon), nom, rayon };
+    map.setView([villeSelectionnee.lat, villeSelectionnee.lon], raisonZoom(rayon));
+  }
+
+  function raisonZoom(rayon) {
+    if (rayon >= 8000) return 12;
+    if (rayon >= 5000) return 13;
+    if (rayon >= 3000) return 14;
+    return 15;
+  }
+
+  // ═══════════════════════════════════════════════════
+  // RECHERCHE OVERPASS
+  // nwr = node + way + relation (ne rate aucun élément OSM)
+  // out center = coordonnées du centre pour ways/relations
+  // ═══════════════════════════════════════════════════
+  async function rechercher(categorie) {
+    if (!villeSelectionnee) {
+      toast('Choisis d\'abord une ville ou utilise 📍');
+      return;
+    }
+
+    const cat = CATEGORIES[categorie];
+    if (!cat) return;
+
+    document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(`btn-${categorie}`)?.classList.add('active');
+    markersLayer.clearLayers();
+    showLoader(true);
+
+    try {
+      const { lat, lon, rayon } = villeSelectionnee;
+      const f = cat.overpassFilter;
+
+      const query = `[out:json][timeout:25];(node${f}(around:${rayon},${lat},${lon});way${f}(around:${rayon},${lat},${lon});relation${f}(around:${rayon},${lat},${lon}););out center;`;
+
+      // Proxy CORS (nécessaire depuis file://, inutile depuis serveur local)
+      // Si tu es sur localhost, tu peux enlever le proxy et utiliser l'URL directe
+      const OVERPASS = 'https://overpass-api.de/api/interpreter';
+      let res;
+      try {
+        // Essai direct (fonctionne depuis localhost)
+        res = await fetch(`${OVERPASS}?data=${encodeURIComponent(query)}`);
+        if (!res.ok) throw new Error();
+      } catch {
+        // Fallback proxy (depuis file://)
+        res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(OVERPASS + '?data=' + encodeURIComponent(query))}`);
+      }
+
+      const data = await res.json();
+      const elements = data.elements || [];
+
+      if (!elements.length) {
+        toast(`Aucune ${cat.label.toLowerCase()} trouvée ici.`);
+        showLoader(false);
+        return;
+      }
+
+      elements.forEach(el => {
+        // nodes → lat/lon direct ; ways/relations → center
+        const eLat = el.lat ?? el.center?.lat;
+        const eLon = el.lon ?? el.center?.lon;
+        if (!eLat || !eLon) return;
+
+        const icon = L.divIcon({
+          html: `<div style="background:${cat.couleur};border:2.5px solid white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 2px 8px rgba(0,0,0,.45);">${cat.emoji}</div>`,
+          className: '',
+          iconSize: [32, 32],
+          iconAnchor: [16, 16],
+          popupAnchor: [0, -18]
+        });
+
+        const marker = L.marker([eLat, eLon], { icon });
+        const gmaps  = `https://www.google.com/maps/dir/?api=1&destination=${eLat},${eLon}`;
+        const nom    = el.tags?.name || el.tags?.['name:fr'] || '';
+        const acces  = el.tags?.access === 'private' ? 'Accès privé' : el.tags?.fee === 'yes' ? 'Payant' : '';
+        const osm_id = `${el.type}-${el.id}`;
+
+        marker.bindPopup(() => creerPopup(osm_id, cat, nom, acces, gmaps), { maxWidth: 240 });
+
+        markersLayer.addLayer(marker);
+      });
+
+      const n = elements.length;
+      toast(`${n} ${cat.label.toLowerCase()}${n > 1 ? 's' : ''} trouvée${n > 1 ? 's' : ''}`);
+
+    } catch (err) {
+      console.error(err);
+      toast('Erreur réseau. Vérifie ta connexion.');
+    }
+
+    showLoader(false);
+  }
+
+  // ═══════════════════════════════════════════════════
+  // ETAT FONCTIONNEL — stocké dans localStorage par ID OSM
+  // Clé : "etat_<osm_id>"  Valeur : { ok: bool, date: "JJ/MM/AAAA" }
+  // ═══════════════════════════════════════════════════
+  function getEtat(osm_id) {
+    try { return JSON.parse(localStorage.getItem('etat_' + osm_id)); } catch { return null; }
+  }
+
+  function setEtat(osm_id, ok) {
+    const date = new Date().toLocaleDateString('fr-FR');
+    localStorage.setItem('etat_' + osm_id, JSON.stringify({ ok, date }));
+  }
+
+  function creerPopup(osm_id, cat, nom, acces, gmaps) {
+    const etat = getEtat(osm_id);
+
+    // Badge état
+    let badgeEtat = '';
+    if (etat !== null) {
+      const cls  = etat.ok ? 'ok' : 'ko';
+      const icon = etat.ok ? '✅' : '❌';
+      const txt  = etat.ok ? 'Fonctionne' : 'Hors service';
+      badgeEtat = `
+        <div class="popup-etat ${cls}">${icon} ${txt}</div>
+        <div class="popup-etat-date">Signalé le ${etat.date}</div>`;
+    } else {
+      badgeEtat = `<div class="popup-etat unkn">❓ État inconnu</div>`;
+    }
+
+    const div = document.createElement('div');
+    div.innerHTML = `
+      <div class="popup-title">${cat.emoji} ${cat.label}</div>
+      ${nom   ? `<div class="popup-sub">${nom}</div>` : ''}
+      ${acces ? `<div class="popup-sub">${acces}</div>` : ''}
+      ${badgeEtat}
+      <div class="popup-signalement">
+        <button class="popup-sig-btn fonctionne" onclick="signalerEtat('${osm_id}', true, this)">✅ Ça marche</button>
+        <button class="popup-sig-btn hs"         onclick="signalerEtat('${osm_id}', false, this)">❌ Hors service</button>
+      </div>
+      <a class="popup-btn" href="${gmaps}" target="_blank">🗺️ Itinéraire</a>
+    `;
+    return div;
+  }
+
+  function signalerEtat(osm_id, ok, btn) {
+    setEtat(osm_id, ok);
+    // Rafraîchir le popup en place
+    map.eachLayer(layer => {
+      if (layer.getPopup && layer.getPopup()) {
+        const p = layer.getPopup();
+        if (p.isOpen()) {
+          // Récupérer les infos stockées sur le marker
+          const content = p.getContent();
+          if (content && content.querySelector) {
+            const etatDiv = content.querySelector('.popup-etat');
+            const dateDiv = content.querySelector('.popup-etat-date');
+            const date    = new Date().toLocaleDateString('fr-FR');
+            if (etatDiv) {
+              etatDiv.className = `popup-etat ${ok ? 'ok' : 'ko'}`;
+              etatDiv.textContent = ok ? '✅ Fonctionne' : '❌ Hors service';
+            }
+            if (dateDiv) {
+              dateDiv.textContent = `Signalé le ${date}`;
+            } else if (etatDiv) {
+              const d = document.createElement('div');
+              d.className = 'popup-etat-date';
+              d.textContent = `Signalé le ${date}`;
+              etatDiv.after(d);
+            }
+          }
+        }
+      }
+    });
+    toast(ok ? '✅ Merci pour le signalement !' : '❌ Signalement enregistré.');
+  }
+
+  // ═══════════════════════════════════════════════════
+  // UTILITAIRES
+  // ═══════════════════════════════════════════════════
+  function showLoader(v) {
+    document.getElementById('loader').classList.toggle('visible', v);
+  }
+
+  let toastTimer;
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+  }
+
+  // ═══════════════════════════════════════════════════
+  // SERVICE WORKER (PWA)
+  // ═══════════════════════════════════════════════════
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+</script>
+</body>
+</html>
