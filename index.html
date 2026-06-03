@@ -156,6 +156,18 @@
     }
     #btn-piquenique.active { background: #558b2f; color: white; }
 
+    #btn-parking {
+      background: #b0bec5;
+      color: #1a2329;
+    }
+    #btn-parking.active { background: #37474f; color: white; }
+
+    #btn-velostop {
+      background: #ffcc80;
+      color: #3e2000;
+    }
+    #btn-velostop.active { background: #e65100; color: white; }
+
     /* ══════════════════════════════════
        CARTE — prend tout l'espace restant
     ══════════════════════════════════ */
@@ -251,24 +263,40 @@
       margin-top: 10px;
     }
 
-    /* Badge état fonctionnel */
-    .popup-etat {
+    /* ── Votes scindés ── */
+    .popup-votes {
       display: flex;
-      align-items: center;
-      gap: 7px;
-      margin: 8px 0 4px;
-      padding: 7px 10px;
-      border-radius: 8px;
-      font-size: 0.88rem;
-      font-weight: 600;
+      gap: 6px;
+      margin: 10px 0 4px;
     }
-    .popup-etat.ok    { background: #e8f5e9; color: #2e7d32; }
-    .popup-etat.ko    { background: #ffebee; color: #c62828; }
-    .popup-etat.unkn  { background: #f5f5f5; color: #757575; }
+    .vote-bloc {
+      flex: 1;
+      border-radius: 9px;
+      padding: 7px 6px 6px;
+      text-align: center;
+      border: 1.5px solid transparent;
+    }
+    .vote-bloc.ok  { background: #e8f5e9; border-color: #a5d6a7; }
+    .vote-bloc.ko  { background: #ffebee; border-color: #ef9a9a; }
+    .vote-count {
+      font-size: 1.3rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .vote-bloc.ok  .vote-count { color: #2e7d32; }
+    .vote-bloc.ko  .vote-count { color: #c62828; }
+    .vote-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+    .vote-bloc.ok .vote-label { color: #388e3c; }
+    .vote-bloc.ko .vote-label { color: #d32f2f; }
 
-    .popup-etat-date {
-      font-size: 0.76rem;
-      color: #999;
+    .popup-last-date {
+      font-size: 0.74rem;
+      color: #aaa;
+      text-align: center;
       margin-bottom: 6px;
     }
 
@@ -276,7 +304,7 @@
     .popup-signalement {
       display: flex;
       gap: 6px;
-      margin-top: 8px;
+      margin-top: 6px;
     }
     .popup-sig-btn {
       flex: 1;
@@ -349,20 +377,22 @@
       </button>
       <button id="btn-piquenique" class="btn" onclick="rechercher('piquenique')">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0">
-          <!-- Table : plateau -->
           <rect x="2" y="9" width="20" height="2.5" rx="1.2"/>
-          <!-- Pied central -->
           <rect x="11" y="11.5" width="2" height="5" rx="1"/>
-          <!-- Bancs -->
           <rect x="1" y="16.5" width="9" height="2" rx="1"/>
           <rect x="14" y="16.5" width="9" height="2" rx="1"/>
-          <!-- Pieds bancs -->
           <rect x="2.5" y="18.5" width="1.5" height="2.5" rx="0.7"/>
           <rect x="7" y="18.5" width="1.5" height="2.5" rx="0.7"/>
           <rect x="15.5" y="18.5" width="1.5" height="2.5" rx="0.7"/>
           <rect x="20" y="18.5" width="1.5" height="2.5" rx="0.7"/>
         </svg>
         Pique-nique
+      </button>
+      <button id="btn-parking" class="btn" onclick="rechercher('parking')">
+        🅿️ Parking
+      </button>
+      <button id="btn-velostop" class="btn" onclick="rechercher('velostop')">
+        🚲 Vélo
       </button>
     </div>
   </header>
@@ -403,15 +433,25 @@
       label: 'Table de pique-nique',
       overpassFilter: '["leisure"="picnic_table"]',
       couleur: '#558b2f',
-      emoji: null, // SVG custom — voir svgPiquenique()
+      emoji: null,
       svg: true
+    },
+    parking: {
+      label: 'Parking voiture',
+      overpassFilter: '["amenity"="parking"]',
+      couleur: '#37474f',
+      emoji: '🅿️'
+    },
+    velostop: {
+      label: 'Parking vélo',
+      overpassFilter: '["amenity"="bicycle_parking"]',
+      couleur: '#e65100',
+      emoji: '🚲'
     }
     // Exemples futurs :
-    // bancs:     { label: 'Banc',      overpassFilter: '["amenity"="bench"]',        couleur: '#388e3c', emoji: '🪑' },
-    // douches:   { label: 'Douche',    overpassFilter: '["amenity"="shower"]',       couleur: '#f57c00', emoji: '🚿' },
-    // poubelles: { label: 'Poubelle',  overpassFilter: '["amenity"="waste_basket"]', couleur: '#5d4037', emoji: '🗑️' },
-    // parking:   { label: 'Parking',   overpassFilter: '["amenity"="parking"]',      couleur: '#37474f', emoji: '🅿️' },
-    // recharge:  { label: 'Recharge',  overpassFilter: '["amenity"="charging_station"]', couleur: '#2e7d32', emoji: '⚡' },
+    // bancs:    { label: 'Banc',     overpassFilter: '["amenity"="bench"]',             couleur: '#388e3c', emoji: '🪑' },
+    // douches:  { label: 'Douche',   overpassFilter: '["amenity"="shower"]',            couleur: '#f57c00', emoji: '🚿' },
+    // recharge: { label: 'Recharge', overpassFilter: '["amenity"="charging_station"]',  couleur: '#2e7d32', emoji: '⚡' },
   };
 
   // ═══════════════════════════════════════════════════
@@ -630,41 +670,42 @@
   }
 
   // ═══════════════════════════════════════════════════
-  // FIREBASE — signalements partagés entre appareils
-  // ⚠️  Remplace FIREBASE_URL par ton URL Firebase ci-dessous
+  // FIREBASE — votes partagés entre appareils
+  // Structure : /votes/<osm_id> = { ok: N, ko: N, date: "JJ/MM/AAAA" }
   // ═══════════════════════════════════════════════════
   const FIREBASE_URL = 'https://trouvertoilettes-default-rtdb.europe-west1.firebasedatabase.app';
+  const votesCache = {};
 
-  // Cache local pour éviter trop de requêtes réseau
-  const etatCache = {};
-
-  async function getEtat(osm_id) {
-    if (etatCache[osm_id] !== undefined) return etatCache[osm_id];
+  async function getVotes(osm_id) {
+    if (votesCache[osm_id] !== undefined) return votesCache[osm_id];
     try {
-      const res  = await fetch(`${FIREBASE_URL}/etats/${osm_id}.json`);
+      const res  = await fetch(`${FIREBASE_URL}/votes/${osm_id}.json`);
       const data = await res.json();
-      etatCache[osm_id] = data; // null si inexistant
-      return data;
-    } catch { return null; }
+      // null si aucun vote encore
+      votesCache[osm_id] = data || { ok: 0, ko: 0, date: null };
+      return votesCache[osm_id];
+    } catch { return { ok: 0, ko: 0, date: null }; }
   }
 
-  async function setEtat(osm_id, ok) {
-    const date = new Date().toLocaleDateString('fr-FR');
-    const payload = { ok, date };
-    etatCache[osm_id] = payload;
+  async function addVote(osm_id, estOk) {
+    const votes = await getVotes(osm_id);
+    if (estOk) votes.ok = (votes.ok || 0) + 1;
+    else        votes.ko = (votes.ko || 0) + 1;
+    votes.date = new Date().toLocaleDateString('fr-FR');
+    votesCache[osm_id] = votes;
     try {
-      await fetch(`${FIREBASE_URL}/etats/${osm_id}.json`, {
+      await fetch(`${FIREBASE_URL}/votes/${osm_id}.json`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(votes)
       });
-    } catch { toast('Erreur réseau, signalement non sauvegardé.'); }
+    } catch { toast('Erreur réseau, vote non sauvegardé.'); }
+    return votes;
   }
 
   async function creerPopup(osm_id, cat, nom, acces, gmaps) {
     const div = document.createElement('div');
 
-    // Titre et infos
     const titleHtml = cat.svg
       ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:4px"><rect x="2" y="9" width="20" height="2.5" rx="1.2"/><rect x="11" y="11.5" width="2" height="5" rx="1"/><rect x="1" y="16.5" width="9" height="2" rx="1"/><rect x="14" y="16.5" width="9" height="2" rx="1"/><rect x="2.5" y="18.5" width="1.5" height="2.5" rx="0.7"/><rect x="7" y="18.5" width="1.5" height="2.5" rx="0.7"/><rect x="15.5" y="18.5" width="1.5" height="2.5" rx="0.7"/><rect x="20" y="18.5" width="1.5" height="2.5" rx="0.7"/></svg>`
       : cat.emoji + ' ';
@@ -673,8 +714,17 @@
       <div class="popup-title">${titleHtml}${cat.label}</div>
       ${nom   ? `<div class="popup-sub">${nom}</div>` : ''}
       ${acces ? `<div class="popup-sub">${acces}</div>` : ''}
-      <div class="popup-etat unkn" id="etat-${osm_id}">⏳ Chargement…</div>
-      <div class="popup-etat-date" id="etat-date-${osm_id}"></div>
+      <div class="popup-votes">
+        <div class="vote-bloc ok">
+          <div class="vote-count" id="vote-ok-${osm_id}">…</div>
+          <div class="vote-label">✅ Ça marche</div>
+        </div>
+        <div class="vote-bloc ko">
+          <div class="vote-count" id="vote-ko-${osm_id}">…</div>
+          <div class="vote-label">❌ Hors service</div>
+        </div>
+      </div>
+      <div class="popup-last-date" id="vote-date-${osm_id}"></div>
       <div class="popup-signalement">
         <button class="popup-sig-btn fonctionne" onclick="signalerEtat('${osm_id}', true)">✅ Ça marche</button>
         <button class="popup-sig-btn hs"         onclick="signalerEtat('${osm_id}', false)">❌ Hors service</button>
@@ -682,31 +732,26 @@
       <a class="popup-btn" href="${gmaps}" target="_blank">🗺️ Itinéraire</a>
     `;
 
-    // Charger l'état depuis Firebase de manière asynchrone
-    getEtat(osm_id).then(etat => afficherEtatDansPopup(osm_id, etat));
+    // Charge les votes Firebase et met à jour l'affichage
+    getVotes(osm_id).then(v => afficherVotes(osm_id, v));
 
     return div;
   }
 
-  function afficherEtatDansPopup(osm_id, etat) {
-    const etatDiv = document.getElementById('etat-' + osm_id);
-    const dateDiv = document.getElementById('etat-date-' + osm_id);
-    if (!etatDiv) return;
-    if (etat && etat.ok !== undefined) {
-      etatDiv.className = `popup-etat ${etat.ok ? 'ok' : 'ko'}`;
-      etatDiv.textContent = etat.ok ? '✅ Fonctionne' : '❌ Hors service';
-      if (dateDiv) dateDiv.textContent = `Signalé le ${etat.date}`;
-    } else {
-      etatDiv.className = 'popup-etat unkn';
-      etatDiv.textContent = '❓ État inconnu';
-    }
+  function afficherVotes(osm_id, votes) {
+    const okEl   = document.getElementById('vote-ok-'   + osm_id);
+    const koEl   = document.getElementById('vote-ko-'   + osm_id);
+    const dateEl = document.getElementById('vote-date-' + osm_id);
+    if (!okEl) return;
+    okEl.textContent   = votes.ok ?? 0;
+    koEl.textContent   = votes.ko ?? 0;
+    if (dateEl) dateEl.textContent = votes.date ? `Dernier avis le ${votes.date}` : 'Aucun avis pour le moment';
   }
 
-  async function signalerEtat(osm_id, ok) {
-    await setEtat(osm_id, ok);
-    const etat = etatCache[osm_id];
-    afficherEtatDansPopup(osm_id, etat);
-    toast(ok ? '✅ Merci pour le signalement !' : '❌ Signalement enregistré.');
+  async function signalerEtat(osm_id, estOk) {
+    const votes = await addVote(osm_id, estOk);
+    afficherVotes(osm_id, votes);
+    toast(estOk ? '✅ Merci pour ton avis !' : '❌ Avis enregistré, merci !');
   }
 
   // ═══════════════════════════════════════════════════
