@@ -348,7 +348,21 @@
         🚻 Toilettes
       </button>
       <button id="btn-piquenique" class="btn" onclick="rechercher('piquenique')">
-        🍽️ Pique-nique
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0">
+          <!-- Table : plateau -->
+          <rect x="2" y="9" width="20" height="2.5" rx="1.2"/>
+          <!-- Pied central -->
+          <rect x="11" y="11.5" width="2" height="5" rx="1"/>
+          <!-- Bancs -->
+          <rect x="1" y="16.5" width="9" height="2" rx="1"/>
+          <rect x="14" y="16.5" width="9" height="2" rx="1"/>
+          <!-- Pieds bancs -->
+          <rect x="2.5" y="18.5" width="1.5" height="2.5" rx="0.7"/>
+          <rect x="7" y="18.5" width="1.5" height="2.5" rx="0.7"/>
+          <rect x="15.5" y="18.5" width="1.5" height="2.5" rx="0.7"/>
+          <rect x="20" y="18.5" width="1.5" height="2.5" rx="0.7"/>
+        </svg>
+        Pique-nique
       </button>
     </div>
   </header>
@@ -389,7 +403,8 @@
       label: 'Table de pique-nique',
       overpassFilter: '["leisure"="picnic_table"]',
       couleur: '#558b2f',
-      emoji: '🍽️'
+      emoji: null, // SVG custom — voir svgPiquenique()
+      svg: true
     }
     // Exemples futurs :
     // bancs:     { label: 'Banc',      overpassFilter: '["amenity"="bench"]',        couleur: '#388e3c', emoji: '🪑' },
@@ -567,8 +582,21 @@
         const eLon = el.lon ?? el.center?.lon;
         if (!eLat || !eLon) return;
 
+        const iconContent = cat.svg
+          ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+               <rect x="2" y="9" width="20" height="2.5" rx="1.2"/>
+               <rect x="11" y="11.5" width="2" height="5" rx="1"/>
+               <rect x="1" y="16.5" width="9" height="2" rx="1"/>
+               <rect x="14" y="16.5" width="9" height="2" rx="1"/>
+               <rect x="2.5" y="18.5" width="1.5" height="2.5" rx="0.7"/>
+               <rect x="7" y="18.5" width="1.5" height="2.5" rx="0.7"/>
+               <rect x="15.5" y="18.5" width="1.5" height="2.5" rx="0.7"/>
+               <rect x="20" y="18.5" width="1.5" height="2.5" rx="0.7"/>
+             </svg>`
+          : cat.emoji;
+
         const icon = L.divIcon({
-          html: `<div style="background:${cat.couleur};border:2.5px solid white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 2px 8px rgba(0,0,0,.45);">${cat.emoji}</div>`,
+          html: `<div style="background:${cat.couleur};border:2.5px solid white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 2px 8px rgba(0,0,0,.45);">${iconContent}</div>`,
           className: '',
           iconSize: [32, 32],
           iconAnchor: [16, 16],
@@ -581,7 +609,11 @@
         const acces  = el.tags?.access === 'private' ? 'Accès privé' : el.tags?.fee === 'yes' ? 'Payant' : '';
         const osm_id = `${el.type}-${el.id}`;
 
-        marker.bindPopup(() => creerPopup(osm_id, cat, nom, acces, gmaps), { maxWidth: 240 });
+        // creerPopup est async : on crée le div vide, Firebase remplit l'état ensuite
+        marker.on('click', async () => {
+          const content = await creerPopup(osm_id, cat, nom, acces, gmaps);
+          marker.bindPopup(content, { maxWidth: 240 }).openPopup();
+        });
 
         markersLayer.addLayer(marker);
       });
@@ -598,78 +630,82 @@
   }
 
   // ═══════════════════════════════════════════════════
-  // ETAT FONCTIONNEL — stocké dans localStorage par ID OSM
-  // Clé : "etat_<osm_id>"  Valeur : { ok: bool, date: "JJ/MM/AAAA" }
+  // FIREBASE — signalements partagés entre appareils
+  // ⚠️  Remplace FIREBASE_URL par ton URL Firebase ci-dessous
   // ═══════════════════════════════════════════════════
-  function getEtat(osm_id) {
-    try { return JSON.parse(localStorage.getItem('etat_' + osm_id)); } catch { return null; }
+  const FIREBASE_URL = 'https://trouvertoilettes-default-rtdb.europe-west1.firebasedatabase.app';
+
+  // Cache local pour éviter trop de requêtes réseau
+  const etatCache = {};
+
+  async function getEtat(osm_id) {
+    if (etatCache[osm_id] !== undefined) return etatCache[osm_id];
+    try {
+      const res  = await fetch(`${FIREBASE_URL}/etats/${osm_id}.json`);
+      const data = await res.json();
+      etatCache[osm_id] = data; // null si inexistant
+      return data;
+    } catch { return null; }
   }
 
-  function setEtat(osm_id, ok) {
+  async function setEtat(osm_id, ok) {
     const date = new Date().toLocaleDateString('fr-FR');
-    localStorage.setItem('etat_' + osm_id, JSON.stringify({ ok, date }));
+    const payload = { ok, date };
+    etatCache[osm_id] = payload;
+    try {
+      await fetch(`${FIREBASE_URL}/etats/${osm_id}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch { toast('Erreur réseau, signalement non sauvegardé.'); }
   }
 
-  function creerPopup(osm_id, cat, nom, acces, gmaps) {
-    const etat = getEtat(osm_id);
-
-    // Badge état
-    let badgeEtat = '';
-    if (etat !== null) {
-      const cls  = etat.ok ? 'ok' : 'ko';
-      const icon = etat.ok ? '✅' : '❌';
-      const txt  = etat.ok ? 'Fonctionne' : 'Hors service';
-      badgeEtat = `
-        <div class="popup-etat ${cls}">${icon} ${txt}</div>
-        <div class="popup-etat-date">Signalé le ${etat.date}</div>`;
-    } else {
-      badgeEtat = `<div class="popup-etat unkn">❓ État inconnu</div>`;
-    }
-
+  async function creerPopup(osm_id, cat, nom, acces, gmaps) {
     const div = document.createElement('div');
+
+    // Titre et infos
+    const titleHtml = cat.svg
+      ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:4px"><rect x="2" y="9" width="20" height="2.5" rx="1.2"/><rect x="11" y="11.5" width="2" height="5" rx="1"/><rect x="1" y="16.5" width="9" height="2" rx="1"/><rect x="14" y="16.5" width="9" height="2" rx="1"/><rect x="2.5" y="18.5" width="1.5" height="2.5" rx="0.7"/><rect x="7" y="18.5" width="1.5" height="2.5" rx="0.7"/><rect x="15.5" y="18.5" width="1.5" height="2.5" rx="0.7"/><rect x="20" y="18.5" width="1.5" height="2.5" rx="0.7"/></svg>`
+      : cat.emoji + ' ';
+
     div.innerHTML = `
-      <div class="popup-title">${cat.emoji} ${cat.label}</div>
+      <div class="popup-title">${titleHtml}${cat.label}</div>
       ${nom   ? `<div class="popup-sub">${nom}</div>` : ''}
       ${acces ? `<div class="popup-sub">${acces}</div>` : ''}
-      ${badgeEtat}
+      <div class="popup-etat unkn" id="etat-${osm_id}">⏳ Chargement…</div>
+      <div class="popup-etat-date" id="etat-date-${osm_id}"></div>
       <div class="popup-signalement">
-        <button class="popup-sig-btn fonctionne" onclick="signalerEtat('${osm_id}', true, this)">✅ Ça marche</button>
-        <button class="popup-sig-btn hs"         onclick="signalerEtat('${osm_id}', false, this)">❌ Hors service</button>
+        <button class="popup-sig-btn fonctionne" onclick="signalerEtat('${osm_id}', true)">✅ Ça marche</button>
+        <button class="popup-sig-btn hs"         onclick="signalerEtat('${osm_id}', false)">❌ Hors service</button>
       </div>
       <a class="popup-btn" href="${gmaps}" target="_blank">🗺️ Itinéraire</a>
     `;
+
+    // Charger l'état depuis Firebase de manière asynchrone
+    getEtat(osm_id).then(etat => afficherEtatDansPopup(osm_id, etat));
+
     return div;
   }
 
-  function signalerEtat(osm_id, ok, btn) {
-    setEtat(osm_id, ok);
-    // Rafraîchir le popup en place
-    map.eachLayer(layer => {
-      if (layer.getPopup && layer.getPopup()) {
-        const p = layer.getPopup();
-        if (p.isOpen()) {
-          // Récupérer les infos stockées sur le marker
-          const content = p.getContent();
-          if (content && content.querySelector) {
-            const etatDiv = content.querySelector('.popup-etat');
-            const dateDiv = content.querySelector('.popup-etat-date');
-            const date    = new Date().toLocaleDateString('fr-FR');
-            if (etatDiv) {
-              etatDiv.className = `popup-etat ${ok ? 'ok' : 'ko'}`;
-              etatDiv.textContent = ok ? '✅ Fonctionne' : '❌ Hors service';
-            }
-            if (dateDiv) {
-              dateDiv.textContent = `Signalé le ${date}`;
-            } else if (etatDiv) {
-              const d = document.createElement('div');
-              d.className = 'popup-etat-date';
-              d.textContent = `Signalé le ${date}`;
-              etatDiv.after(d);
-            }
-          }
-        }
-      }
-    });
+  function afficherEtatDansPopup(osm_id, etat) {
+    const etatDiv = document.getElementById('etat-' + osm_id);
+    const dateDiv = document.getElementById('etat-date-' + osm_id);
+    if (!etatDiv) return;
+    if (etat && etat.ok !== undefined) {
+      etatDiv.className = `popup-etat ${etat.ok ? 'ok' : 'ko'}`;
+      etatDiv.textContent = etat.ok ? '✅ Fonctionne' : '❌ Hors service';
+      if (dateDiv) dateDiv.textContent = `Signalé le ${etat.date}`;
+    } else {
+      etatDiv.className = 'popup-etat unkn';
+      etatDiv.textContent = '❓ État inconnu';
+    }
+  }
+
+  async function signalerEtat(osm_id, ok) {
+    await setEtat(osm_id, ok);
+    const etat = etatCache[osm_id];
+    afficherEtatDansPopup(osm_id, etat);
     toast(ok ? '✅ Merci pour le signalement !' : '❌ Signalement enregistré.');
   }
 
