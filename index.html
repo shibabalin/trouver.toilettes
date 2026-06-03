@@ -670,28 +670,60 @@
 
   // ═══════════════════════════════════════════════════
   // FIREBASE — votes partagés entre appareils
-  // Structure : /votes/<osm_id> = { ok: N, ko: N, date: "JJ/MM/AAAA" }
+  // Structure Firebase : /votes/<osm_id> = { ok: N, ko: N, date: "JJ/MM/AAAA" }
+  // Structure localStorage : "mon_vote_<osm_id>" = "ok" | "ko"
+  // Règles :
+  //   - 1 seul vote par appareil par lieu (anti-spam via localStorage)
+  //   - Changer d'avis transfère le vote (ancien -1, nouveau +1)
   // ═══════════════════════════════════════════════════
   const FIREBASE_URL = 'https://trouvertoilettes-default-rtdb.europe-west1.firebasedatabase.app';
   const votesCache = {};
+
+  // Récupère le vote précédent de CET appareil pour un lieu
+  function monVoteLocal(osm_id) {
+    return localStorage.getItem('mon_vote_' + osm_id); // "ok", "ko", ou null
+  }
+
+  function sauvegarderVoteLocal(osm_id, valeur) {
+    localStorage.setItem('mon_vote_' + osm_id, valeur);
+  }
 
   async function getVotes(osm_id) {
     if (votesCache[osm_id] !== undefined) return votesCache[osm_id];
     try {
       const res  = await fetch(`${FIREBASE_URL}/votes/${osm_id}.json`);
       const data = await res.json();
-      // null si aucun vote encore
       votesCache[osm_id] = data || { ok: 0, ko: 0, date: null };
       return votesCache[osm_id];
     } catch { return { ok: 0, ko: 0, date: null }; }
   }
 
-  async function addVote(osm_id, estOk) {
+  async function enregistrerVote(osm_id, estOk) {
+    const nouveau = estOk ? 'ok' : 'ko';
+    const ancien  = monVoteLocal(osm_id); // null, "ok" ou "ko"
+
+    // Même vote que déjà exprimé → rien à faire
+    if (ancien === nouveau) {
+      toast('Tu as déjà donné cet avis pour ce lieu.');
+      return await getVotes(osm_id);
+    }
+
     const votes = await getVotes(osm_id);
+
+    // Annuler l'ancien vote si existant
+    if (ancien === 'ok') votes.ok = Math.max(0, (votes.ok || 0) - 1);
+    if (ancien === 'ko') votes.ko = Math.max(0, (votes.ko || 0) - 1);
+
+    // Ajouter le nouveau vote
     if (estOk) votes.ok = (votes.ok || 0) + 1;
     else        votes.ko = (votes.ko || 0) + 1;
+
     votes.date = new Date().toLocaleDateString('fr-FR');
     votesCache[osm_id] = votes;
+
+    // Sauvegarder localement pour retrouver le vote au prochain clic
+    sauvegarderVoteLocal(osm_id, nouveau);
+
     try {
       await fetch(`${FIREBASE_URL}/votes/${osm_id}.json`, {
         method: 'PUT',
@@ -699,6 +731,7 @@
         body: JSON.stringify(votes)
       });
     } catch { toast('Erreur réseau, vote non sauvegardé.'); }
+
     return votes;
   }
 
@@ -714,24 +747,23 @@
       ${nom   ? `<div class="popup-sub">${nom}</div>` : ''}
       ${acces ? `<div class="popup-sub">${acces}</div>` : ''}
       <div class="popup-votes">
-        <div class="vote-bloc ok">
+        <div class="vote-bloc ok" id="bloc-ok-${osm_id}">
           <div class="vote-count" id="vote-ok-${osm_id}">…</div>
           <div class="vote-label">✅ Ça marche</div>
         </div>
-        <div class="vote-bloc ko">
+        <div class="vote-bloc ko" id="bloc-ko-${osm_id}">
           <div class="vote-count" id="vote-ko-${osm_id}">…</div>
           <div class="vote-label">❌ Hors service</div>
         </div>
       </div>
       <div class="popup-last-date" id="vote-date-${osm_id}"></div>
       <div class="popup-signalement">
-        <button class="popup-sig-btn fonctionne" onclick="signalerEtat('${osm_id}', true)">✅ Ça marche</button>
-        <button class="popup-sig-btn hs"         onclick="signalerEtat('${osm_id}', false)">❌ Hors service</button>
+        <button class="popup-sig-btn fonctionne" id="btn-ok-${osm_id}" onclick="signalerEtat('${osm_id}', true)">✅ Ça marche</button>
+        <button class="popup-sig-btn hs"         id="btn-ko-${osm_id}" onclick="signalerEtat('${osm_id}', false)">❌ Hors service</button>
       </div>
       <a class="popup-btn" href="${gmaps}" target="_blank">🗺️ Itinéraire</a>
     `;
 
-    // Charge les votes Firebase et met à jour l'affichage
     getVotes(osm_id).then(v => afficherVotes(osm_id, v));
 
     return div;
@@ -741,16 +773,30 @@
     const okEl   = document.getElementById('vote-ok-'   + osm_id);
     const koEl   = document.getElementById('vote-ko-'   + osm_id);
     const dateEl = document.getElementById('vote-date-' + osm_id);
+    const btnOk  = document.getElementById('btn-ok-'    + osm_id);
+    const btnKo  = document.getElementById('btn-ko-'    + osm_id);
     if (!okEl) return;
-    okEl.textContent   = votes.ok ?? 0;
-    koEl.textContent   = votes.ko ?? 0;
+
+    okEl.textContent = votes.ok ?? 0;
+    koEl.textContent = votes.ko ?? 0;
     if (dateEl) dateEl.textContent = votes.date ? `Dernier avis le ${votes.date}` : 'Aucun avis pour le moment';
+
+    // Indiquer visuellement le vote déjà exprimé par cet appareil
+    const monVote = monVoteLocal(osm_id);
+    if (btnOk) btnOk.style.fontWeight = monVote === 'ok' ? '900' : '600';
+    if (btnOk) btnOk.style.outline    = monVote === 'ok' ? '2px solid #2e7d32' : 'none';
+    if (btnKo) btnKo.style.fontWeight = monVote === 'ko' ? '900' : '600';
+    if (btnKo) btnKo.style.outline    = monVote === 'ko' ? '2px solid #c62828' : 'none';
   }
 
   async function signalerEtat(osm_id, estOk) {
-    const votes = await addVote(osm_id, estOk);
+    const votes = await enregistrerVote(osm_id, estOk);
     afficherVotes(osm_id, votes);
-    toast(estOk ? '✅ Merci pour ton avis !' : '❌ Avis enregistré, merci !');
+    const ancien = monVoteLocal(osm_id);
+    // Le message tient compte du changement d'avis
+    if (estOk && ancien === 'ok') return; // message déjà affiché dans enregistrerVote
+    if (!estOk && ancien === 'ko') return;
+    toast(estOk ? '✅ Avis enregistré !' : '❌ Avis enregistré !');
   }
 
   // ═══════════════════════════════════════════════════
